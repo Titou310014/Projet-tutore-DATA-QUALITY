@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: consommation_avignon
+    columns:
+      - name: annee
+        tests:
+          - not_null
+
+      - name: code_commune
+        tests:
+          - not_null
+
+      - name: operateur
+        tests:
+          - not_null
