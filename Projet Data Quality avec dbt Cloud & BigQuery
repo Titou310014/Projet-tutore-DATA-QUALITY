@@ -1,0 +1,188 @@
+# Projet Data Quality avec dbt Cloud & BigQuery
+
+> **Master 2 Data Governance — Université d'Avignon (UAPV)**  
+Dataset : Consommation Avignon & Élus Députés  
+> Stack : dbt Cloud · Google BigQuery
+
+---
+
+## ️ Structure du projet
+
+```
+data_quality/
+├── models/
+│   ├── example/
+│   │   ├── my_first_dbt_model.sql
+│   │   └── my_second_dbt_model.sql
+│   ├── consommation_avignon.sql       ← modèle principal dataset 1
+│   ├── elus_deputes.sql               ← modèle principal dataset 2
+│   └── stg_data_quality__consommation_avignon.sql  ← staging layer
+├── tests/
+│   ├── consomation_positive.sql       ← test custom : années valides
+│   └── elus_deputes_mandat.sql        ← test custom : date_debut_mandat non nulle
+├── schema.yml                         ← sources + tests natifs dbt
+├── dbt_project.yml                    ← configuration du projet
+└── README.md
+```
+
+---
+
+##  Objectif
+
+Ce projet implémente une pipeline de **qualité des données** sur deux datasets via **dbt Cloud** connecté à **Google BigQuery**.
+
+---
+
+##  Datasets
+
+### Dataset 1 — Consommation Avignon
+- **Source BigQuery** : `data-quality-489709.data_quality.Consommation Avignon`
+- **Colonnes** : `annee`, `code_commune`, `operateur`, `filiere`
+
+### Dataset 2 — Élus Députés
+- **Source BigQuery** : `data-quality-489709.elus_deputes.elus_deputes`
+- **Colonnes** : `nom_elu`, `prenom_elu`, `code_departement`, `date_naissance`, `code_sexe`, `date_debut_mandat`
+
+---
+
+##  Tests de qualité des données
+
+### Tests natifs dbt (`schema.yml`)
+
+#### consommation_avignon
+```yaml
+- annee        → not_null
+- code_commune → not_null
+- operateur    → not_null
+```
+
+#### stg_data_quality__consommation_avignon (staging)
+```yaml
+- annee        → not_null
+- code_commune → not_null
+- operateur    → not_null
+```
+
+#### elus_deputes
+```yaml
+- nom_elu          → not_null
+- prenom_elu       → not_null
+- code_departement → not_null  (severity: warn)
+- date_naissance   → not_null
+- code_sexe        → accepted_values: ['M', 'F']
+```
+
+### Tests custom SQL (`tests/`)
+
+#### `tests/consomation_positive.sql`
+> Détecte les lignes avec une année hors plage [2000–2030]
+```sql
+SELECT *
+FROM {{ ref('consommation_avignon') }}
+WHERE annee < 2000 OR annee > 2030
+```
+
+#### `tests/elus_deputes_mandat.sql`
+> Détecte les élus sans date de début de mandat
+```sql
+SELECT *
+FROM {{ ref('elus_deputes') }}
+WHERE date_debut_mandat IS NULL
+```
+
+---
+
+##  Résultats `dbt build` — Run du 31/03/2025
+
+```
+dbt build ✅ Success — 18 étapes | 17 Pass | 1 Warn | 0 Error
+```
+
+### Modèles compilés
+
+| # | Modèle | Statut | Durée | Matérialisation |
+|---|--------|--------|-------|-----------------|
+| 1 | `stg_data_quality__consommation_avignon` | ✅ Succeeded | 3.59s | view |
+| 2 | `my_first_dbt_model` | ✅ Succeeded | 5.45s | table |
+| 3 | `elus_deputes` | ✅ Succeeded | 3.61s | view |
+| 4 | `consommation_avignon` | ✅ Succeeded | 5.77s | table |
+| 5 | `my_second_dbt_model` | ✅ Succeeded | 3.40s | table |
+
+### Tests exécutés
+
+| # | Test | Statut | Durée |
+|---|------|--------|-------|
+| 1 | `not_null_stg_data_quality__consommation_avignon_annee` | ✅ Pass | 2.17s |
+| 2 | `not_null_stg_data_quality__consommation_avignon_code_commune` | ✅ Pass | 1.97s |
+| 3 | `not_null_stg_data_quality__consommation_avignon_operateur` | ✅ Pass | 2.09s |
+| 4 | `not_null_elus_deputes_nom_elu` | ✅ Pass | 2.14s |
+| 5 | `accepted_values_elus_deputes_code_sexe__M__F` | ✅ Pass | 2.22s |
+| 6 | `elus_deputes` (test générique) | ✅ Pass | 2.37s |
+| 7 | `not_null_elus_deputes_code_departement` | ⚠️ Warn | 2.09s |
+| 8 | `not_null_elus_deputes_date_naissance` | ✅ Pass | 2.15s |
+| 9 | `not_null_elus_deputes_prenom_elu` | ✅ Pass | 2.20s |
+| 10 | `consomation_positive` (test custom) | ✅ Pass | 1.85s |
+| 11 | `not_null_consommation_avignon_annee` | ✅ Pass | 1.68s |
+| 12 | `not_null_consommation_avignon_operateur` | ✅ Pass | 1.92s |
+| 13 | `not_null_consommation_avignon_code_commune` | ✅ Pass | 2.03s |
+
+> **⚠️ Warning** : `code_departement` contient des valeurs nulles dans le dataset `elus_deputes`. Ce test est configuré en `severity: warn` (non bloquant) car cette colonne peut être absente pour certains profils d'élus.
+
+---
+
+##  Lancer le projet
+
+```bash
+# Installer les dépendances
+dbt deps
+
+# Compiler et exécuter les modèles
+dbt run
+
+# Lancer les tests de qualité
+dbt test
+
+# Build complet (modèles + tests)
+dbt build
+
+# Cibler un modèle spécifique
+dbt test --select consommation_avignon
+dbt test --select elus_deputes
+```
+
+---
+
+## ⚙️ Configuration
+
+**`dbt_project.yml`**
+```yaml
+name: 'data_quality'
+version: '1.0.0'
+profile: 'default'
+models:
+  data_quality:
+    example:
+      +materialized: table
+```
+
+**Profil BigQuery** (dans `~/.dbt/profiles.yml` ou dbt Cloud)
+```yaml
+default:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: data-quality-489709
+      dataset: dbt_msidi
+      threads: 4
+```
+
+---
+
+##  Ressources
+
+- [dbt Documentation](https://docs.getdbt.com/docs/introduction)
+- [PyDeeQu GitHub](https://github.com/awslabs/python-deequ)
+- [Google BigQuery](https://cloud.google.com/bigquery)
+- [dbt Cloud](https://cloud.getdbt.com/)
