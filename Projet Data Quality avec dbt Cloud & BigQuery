@@ -1,12 +1,12 @@
 # Projet Data Quality avec dbt Cloud & BigQuery
 
 > **Master 2 Data Governance — Université d'Avignon (UAPV)**  
-Dataset : Consommation Avignon & Élus Députés  
+> Dataset : Consommation Avignon & Élus Députés  
 > Stack : dbt Cloud · Google BigQuery
 
 ---
 
-## ️ Structure du projet
+##  Structure du projet
 
 ```
 data_quality/
@@ -33,7 +33,7 @@ Ce projet implémente une pipeline de **qualité des données** sur deux dataset
 
 ---
 
-##  Datasets
+## 📁 Datasets
 
 ### Dataset 1 — Consommation Avignon
 - **Source BigQuery** : `data-quality-489709.data_quality.Consommation Avignon`
@@ -152,7 +152,7 @@ dbt test --select elus_deputes
 
 ---
 
-## ⚙️ Configuration
+##  Configuration
 
 **`dbt_project.yml`**
 ```yaml
@@ -176,6 +176,191 @@ default:
       project: data-quality-489709
       dataset: dbt_msidi
       threads: 4
+```
+
+---
+
+##  Code source complet
+
+### `models/consommation_avignon.sql`
+
+```sql
+SELECT
+  `Année` as annee,
+  `Code Commune` as code_commune,
+  `_OPERATEUR_` as operateur,
+  `FILIERE` as filiere
+FROM `data-quality-489709.data_quality.Consommation Avignon`
+```
+
+---
+
+### `models/elus_deputes.sql`
+
+```sql
+SELECT *
+FROM `data-quality-489709.elus_deputes.elus_deputes`
+```
+
+---
+
+### `models/stg_data_quality__consommation_avignon.sql`
+
+```sql
+SELECT
+  `Année` as annee,
+  `Code Commune` as code_commune,
+  `_OPERATEUR_` as operateur,
+  `FILIERE` as filiere
+FROM {{ source('data_quality', 'consommation_avignon') }}
+```
+
+---
+
+### `models/example/my_first_dbt_model.sql`
+
+```sql
+{{ config(materialized='table') }}
+
+with source_data as (
+
+    select 1 as id
+    union all
+    select null as id
+
+)
+
+select *
+from source_data
+
+-- where id is not null
+```
+
+---
+
+### `models/example/my_second_dbt_model.sql`
+
+```sql
+select *
+from {{ ref('my_first_dbt_model') }}
+where id = 1
+```
+
+---
+
+### `tests/consomation_positive.sql`
+
+```sql
+-- Détecte les années invalides
+SELECT *
+FROM {{ ref('consommation_avignon') }}
+WHERE annee < 2000 OR annee > 2030
+```
+
+---
+
+### `tests/elus_deputes_mandat.sql`
+
+```sql
+-- Détecte les élus sans date de début de mandat
+SELECT *
+FROM {{ ref('elus_deputes') }}
+WHERE date_debut_mandat IS NULL
+```
+
+---
+
+### `schema.yml`
+
+```yaml
+version: 2
+
+sources:
+  - name: data_quality
+    database: data-quality-489709
+    schema: data_quality
+    tables:
+      - name: consommation_avignon
+  - name: elus_deputes
+    database: data-quality-489709
+    schema: elus_deputes
+    tables:
+      - name: elus_deputes
+
+models:
+  - name: consommation_avignon
+    columns:
+      - name: operateur
+        tests:
+          - not_null
+      - name: annee
+        tests:
+          - not_null
+      - name: code_commune
+        tests:
+          - not_null
+
+  - name: stg_data_quality__consommation_avignon
+    columns:
+      - name: operateur
+        tests:
+          - not_null
+      - name: annee
+        tests:
+          - not_null
+      - name: code_commune
+        tests:
+          - not_null
+
+  - name: elus_deputes
+    columns:
+      - name: nom_elu
+        tests:
+          - not_null
+      - name: prenom_elu
+        tests:
+          - not_null
+      - name: code_departement
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: date_naissance
+        tests:
+          - not_null
+      - name: code_sexe
+        tests:
+          - accepted_values:
+              values: ['M', 'F']
+```
+
+---
+
+### `dbt_project.yml`
+
+```yaml
+name: 'data_quality'
+version: '1.0.0'
+config-version: 2
+
+profile: 'default'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  data_quality:
+    example:
+      +materialized: table
 ```
 
 ---
